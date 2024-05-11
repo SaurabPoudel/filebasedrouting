@@ -26,9 +26,26 @@ async function handleRegularRoutes(fileUrl, req, res) {
   }
 }
 
+async function handleDynamicRoutes(folder) {
+  try {
+    const files = await fs.promises.readdir(folder);
+
+    const dynamicFileName = files.find((fname) => {
+      return fname.match(/\[[a-zA-Z0-9\._]+\]/);
+    });
+    return {
+      file: dynamicFileName,
+      param: dynamicFileName.replace("[", "").replace("].js", ""),
+    };
+  } catch (e) {
+    console.log(e);
+    return null;
+  }
+}
+
 app.all("/*", async (req, res) => {
   let fileUrl = (ROOT_FOLDER + req.url).replace("//", "/");
-  console.log(fileUrl);
+
   //TO DO use regex to support various extensions
   let isFile = fs.existsSync(fileUrl + ".js");
 
@@ -38,9 +55,29 @@ app.all("/*", async (req, res) => {
     fileUrl += ".js";
   }
 
+  console.log(fileUrl);
+
   let result = await handleRegularRoutes(fileUrl, req, res);
   if (result === false) {
-    return res.send("Route Not Found");
+    // return res.send("Route Not Found");
+    const pathArray = (ROOT_FOLDER + req.url).replace("//", "/").split("/");
+    const lastElement = pathArray.pop();
+    const folderToCheck = pathArray.join("/");
+    const dynamicHandler = await handleDynamicRoutes(folderToCheck);
+
+    if (!dynamicHandler) {
+      return res.send("Route not found");
+    }
+    // req.params[dynamicHandler.param] = lastElement overrides every single params
+    req.params = { ...req.params, [dynamicHandler.param]: lastElement };
+
+    result = await handleRegularRoutes(
+      [folderToCheck, dynamicHandler.file].join("/"),
+      req,
+      res
+    );
+
+    res.send(result);
   } else {
     return res.send(result);
   }
